@@ -1,0 +1,34 @@
+name: Update Daily Scrum Issue
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  update-scrum:
+    runs-on: ubuntu-latest
+    # "데일리-스크럼" 라벨이 붙은 이슈에서만 실행
+    if: contains(github.event.issue.labels.*.name, '데일리-스크럼')
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: Run Update Script
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO_NAME: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          COMMENT_BODY: ${{ github.event.comment.body }}
+          COMMENT_AUTHOR: ${{ github.event.comment.user.login }}
+        run: |
+          python .github/scripts/update_scrum_body.py

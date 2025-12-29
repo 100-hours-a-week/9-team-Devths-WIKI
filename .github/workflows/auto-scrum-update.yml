@@ -23,6 +23,10 @@ jobs:
         with:
           python-version: '3.9'
 
+      # [추가됨] 파이썬 라이브러리 설치 단계
+      - name: Install dependencies
+        run: pip install PyGithub
+
       - name: Run Update Script
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -31,4 +35,6 @@ jobs:
           COMMENT_BODY: ${{ github.event.comment.body }}
           COMMENT_AUTHOR: ${{ github.event.comment.user.login }}
         run: |
+          # 파일명을 update_scrum_body.py로 가정합니다.
+          # 실제 파일명과 정확히 일치해야 합니다.
           python .github/scripts/update_scrum_body.py

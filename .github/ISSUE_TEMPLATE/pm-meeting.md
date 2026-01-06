@@ -1,3 +1,12 @@
+---
+name: PM-Meeting-Template
+about: PM 미팅 템플릿
+title: ''
+labels: 미팅
+assignees: ''
+
+---
+
 ## 1. 이번 주 스프린트 목표
 > **다음 PM미팅까지 반드시 달성되어야 하는 상태**
 

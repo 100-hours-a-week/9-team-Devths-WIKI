@@ -1,3 +1,11 @@
+---
+name: PL-Meeting-Template
+about: PL 미팅 템플릿
+title: ''
+labels: 미팅
+assignees: ''
+
+---
 ## 기본 정보
 - 팀명:
 - 미팅 일시:

@@ -4,9 +4,9 @@ on:
   # 수동 트리거
   workflow_dispatch:
   
-  # 스케줄링 (5분마다 체크 - Wiki 변경을 빠르게 감지)
+  # 스케줄링 (1분마다 체크 - Wiki 변경을 즉시 감지)
   schedule:
-    - cron: '*/5 * * * *'  # 5분마다
+    - cron: '* * * * *'  # 1분마다 (GitHub Actions 최소 간격)
   
   # repository_dispatch (Wiki에서 webhook으로 트리거 가능)
   repository_dispatch:
@@ -42,8 +42,10 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL || 'https://szqkjeezfptsdxwtypbj.supabase.co' }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY || secrets.SUPABASEKEY }}
           WIKI_PATH: ${{ github.workspace }}/wiki
-        run: node sync-wiki-to-supabase.js
-        continue-on-error: true
+        run: |
+          echo "🚀 스크립트 실행 시작..."
+          node sync-wiki-to-supabase.js
+          echo "✅ 스크립트 실행 완료"
       
       - name: Summary
         if: success()

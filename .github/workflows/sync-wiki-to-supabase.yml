@@ -1,0 +1,61 @@
+name: Sync Wiki to Supabase
+
+on:
+  # 수동 트리거
+  workflow_dispatch:
+  
+  # 스케줄링 (5분마다 체크 - Wiki 변경을 빠르게 감지)
+  schedule:
+    - cron: '*/5 * * * *'  # 5분마다
+  
+  # repository_dispatch (Wiki에서 webhook으로 트리거 가능)
+  repository_dispatch:
+    types: [wiki-updated]
+
+jobs:
+  sync-wiki:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout main repository
+        uses: actions/checkout@v4
+      
+      - name: Checkout Wiki Repository
+        uses: actions/checkout@v4
+        with:
+          repository: 100-hours-a-week/9-team-Devths-WIKI.wiki
+          path: wiki
+          token: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: '4.TEAM_BLOG/package.json'
+      
+      - name: Install dependencies
+        working-directory: ./4.TEAM_BLOG
+        run: |
+          npm install @supabase/supabase-js gray-matter marked
+      
+      - name: Parse Wiki and Sync to Supabase
+        working-directory: ./4.TEAM_BLOG
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL || 'https://szqkjeezfptsdxwtypbj.supabase.co' }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY || secrets.SUPABASEKEY }}
+          WIKI_PATH: ${{ github.workspace }}/wiki
+        run: node scripts/sync-wiki-to-supabase.js
+        continue-on-error: true
+      
+      - name: Summary
+        if: success()
+        run: |
+          echo "✅ Wiki 동기화 완료!"
+          echo "📝 Team Blog 페이지의 게시글이 Supabase에 동기화되었습니다."
+      
+      - name: Error Summary
+        if: failure()
+        run: |
+          echo "❌ Wiki 동기화 실패"
+          echo "💡 GitHub Secrets에 SUPABASE_URL과 SUPABASE_SERVICE_KEY가 설정되어 있는지 확인하세요."

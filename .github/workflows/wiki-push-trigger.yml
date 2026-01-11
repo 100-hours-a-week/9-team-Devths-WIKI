@@ -1,0 +1,37 @@
+name: Wiki Push to Trigger Sync
+
+on:
+  # Wiki 저장소에 push가 발생하면 메인 저장소의 워크플로우를 트리거
+  push:
+    branches:
+      - master  # Wiki 저장소의 기본 브랜치
+    paths:
+      - '*.md'  # 마크다운 파일 변경 시에만
+
+jobs:
+  trigger-main-sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Main Repository Workflow
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            // [TeamBlog]로 시작하는 파일이 변경되었는지 확인
+            const changedFiles = context.payload.commits?.[0]?.added || [];
+            const hasTeamBlogFile = changedFiles.some(file => file.startsWith('[TeamBlog]'));
+            
+            if (hasTeamBlogFile || changedFiles.length > 0) {
+              console.log('📝 Wiki 파일 변경 감지:', changedFiles);
+              
+              const { data } = await github.rest.actions.createWorkflowDispatch({
+                owner: '100-hours-a-week',
+                repo: '9-team-Devths-WIKI',
+                workflow_id: 'sync-wiki-to-supabase.yml',
+                ref: 'main'
+              });
+              
+              console.log('✅ Main repository workflow triggered');
+            } else {
+              console.log('⏭️  [TeamBlog] 파일 변경 없음, 스킵');
+            }

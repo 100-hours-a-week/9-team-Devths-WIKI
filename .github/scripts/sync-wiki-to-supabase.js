@@ -101,75 +101,183 @@ function extractLinksFromTeamBlog(wikiDir) {
 }
 
 /**
+ * [TeamBlog]로 시작하는 파일을 자동으로 찾기
+ */
+function findTeamBlogFiles(wikiDir) {
+  const teamBlogFiles = [];
+  
+  try {
+    const files = fs.readdirSync(wikiDir);
+    console.log(`📂 Wiki 디렉토리에서 ${files.length}개의 파일을 찾았습니다.\n`);
+    
+    files.forEach(file => {
+      // [TeamBlog]로 시작하는 .md 파일 찾기
+      // GitHub Wiki는 페이지 이름의 공백을 하이픈으로 변환하므로:
+      // - [TeamBlog] 게시글-제목 → [TeamBlog]-게시글-제목.md
+      // - [TeamBlog]-게시글-제목 → [TeamBlog]-게시글-제목.md
+      if (file.endsWith('.md') && file.startsWith('[TeamBlog]')) {
+        teamBlogFiles.push(file);
+        console.log(`   ✅ 발견: ${file}`);
+      } else if (file.endsWith('.md') && file.includes('[TeamBlog]')) {
+        // 혹시 파일명 중간에 [TeamBlog]가 있는 경우도 체크
+        console.log(`   ⚠️  [TeamBlog] 포함 파일 (시작이 아님): ${file}`);
+      }
+    });
+    
+    if (teamBlogFiles.length === 0) {
+      console.log(`   ⚠️  [TeamBlog]로 시작하는 파일을 찾지 못했습니다.`);
+      console.log(`   💡 다음 형식으로 파일명을 확인하세요:`);
+      console.log(`      - [TeamBlog] 게시글-제목.md`);
+      console.log(`      - [TeamBlog]-게시글-제목.md\n`);
+    }
+  } catch (error) {
+    console.error('⚠️  Wiki 디렉토리 읽기 오류:', error.message);
+    console.error(`   경로: ${wikiDir}`);
+  }
+  
+  return teamBlogFiles;
+}
+
+/**
  * Wiki 파일에서 블로그 포스트를 추출
- * TeamBlog 페이지의 링크를 파싱하여 연결된 페이지들을 게시글로 인식
+ * 1. [TeamBlog]로 시작하는 파일을 자동으로 찾기 (우선)
+ * 2. TeamBlog 페이지의 링크를 파싱하여 연결된 페이지들도 포함 (하위 호환성)
  */
 function findBlogPosts(wikiDir) {
   const blogPosts = [];
+  const processedFiles = new Set(); // 중복 방지
   
-  // TeamBlog 페이지에서 링크 추출
-  const linkedPages = extractLinksFromTeamBlog(wikiDir);
+  // 1. [TeamBlog]로 시작하는 파일 자동 찾기
+  const teamBlogFiles = findTeamBlogFiles(wikiDir);
   
-  if (linkedPages.length === 0) {
-    console.log('⚠️  TeamBlog 페이지에서 링크를 찾을 수 없습니다.');
-    console.log('💡 TeamBlog 페이지에 마크다운 링크를 추가하세요:');
-    console.log('   예: | 팀블로그 | [팀블로그](TeamBlog) |');
-    console.log('   예: [게시글 제목](게시글-제목)\n');
-    return blogPosts;
+  if (teamBlogFiles.length > 0) {
+    console.log(`\n🔍 [TeamBlog]로 시작하는 파일 ${teamBlogFiles.length}개를 자동으로 발견했습니다:\n`);
+    teamBlogFiles.forEach(file => {
+      const filePath = path.join(wikiDir, file);
+      processedFiles.add(file);
+      
+      try {
+        const content = fs.readFileSync(filePath, 'utf-8');
+        
+        // Front Matter 파싱
+        let parsed;
+        let frontMatter = {};
+        let markdownContent = content;
+        
+        if (content.includes('---')) {
+          parsed = matter(content);
+          frontMatter = parsed.data;
+          markdownContent = parsed.content;
+        }
+        
+        // 파일명에서 [TeamBlog] 제거하여 페이지 이름 추출
+        // 예: [TeamBlog] 게시글-제목테스트.md → 게시글-제목테스트
+        let pageName = file.replace(/^\[TeamBlog\]\s*/, '').replace(/\.md$/, '').trim();
+        
+        // Front Matter가 있으면 우선 사용, 없으면 파일명에서 추출
+        const title = frontMatter.title || pageName.replace(/-/g, ' ').trim();
+        const description = frontMatter.description || extractDescription(markdownContent);
+        const date = frontMatter.date || frontMatter.created_at || extractDateFromFilename(file) || new Date().toISOString().split('T')[0];
+        
+        blogPosts.push({
+          title: title,
+          description: description,
+          date: date,
+          author_name: frontMatter.author_name || frontMatter.author || 'Devths Team',
+          author_role: frontMatter.author_role || frontMatter.role || 'Team Member',
+          author_avatar: frontMatter.author_avatar,
+          category: frontMatter.category || 'Culture',
+          tags: Array.isArray(frontMatter.tags) ? frontMatter.tags : extractTags(markdownContent),
+          content: markdownContent,
+          thumbnail: frontMatter.thumbnail,
+          read_time: frontMatter.read_time || frontMatter.readTime || calculateReadTime(markdownContent),
+          published: frontMatter.published !== false, // 기본값은 true
+        });
+        
+        console.log(`✅ 게시글 발견: ${title} (파일: ${file})`);
+      } catch (error) {
+        console.error(`⚠️  파일 파싱 오류 (${file}):`, error.message);
+      }
+    });
+    console.log('');
   }
   
-  console.log(`🔗 ${linkedPages.length}개의 링크된 페이지를 찾았습니다: ${linkedPages.join(', ')}\n`);
+  // 2. TeamBlog 페이지에서 링크 추출 (하위 호환성)
+  const linkedPages = extractLinksFromTeamBlog(wikiDir);
   
-  // 각 링크된 페이지를 게시글로 처리
-  linkedPages.forEach(pageName => {
-    // 페이지 이름을 파일명으로 변환 (공백 → 하이픈, 특수문자 처리)
-    const fileName = `${pageName}.md`;
-    const filePath = path.join(wikiDir, fileName);
+  if (linkedPages.length > 0) {
+    console.log(`🔗 TeamBlog 페이지에서 ${linkedPages.length}개의 링크를 발견했습니다:\n`);
     
-    if (!fs.existsSync(filePath)) {
-      console.log(`⚠️  파일을 찾을 수 없습니다: ${fileName}`);
-      return;
-    }
-    
-    try {
-      const content = fs.readFileSync(filePath, 'utf-8');
+    // 각 링크된 페이지를 게시글로 처리 (이미 처리된 파일 제외)
+    linkedPages.forEach(pageName => {
+      // 페이지 이름을 파일명으로 변환 (공백 → 하이픈, 특수문자 처리)
+      const fileName = `${pageName}.md`;
+      const filePath = path.join(wikiDir, fileName);
       
-      // Front Matter 파싱
-      let parsed;
-      let frontMatter = {};
-      let markdownContent = content;
-      
-      if (content.includes('---')) {
-        parsed = matter(content);
-        frontMatter = parsed.data;
-        markdownContent = parsed.content;
+      // 이미 처리된 파일이면 건너뛰기
+      if (processedFiles.has(fileName)) {
+        console.log(`⏭️  이미 처리됨: ${fileName}`);
+        return;
       }
       
-      // Front Matter가 있으면 우선 사용, 없으면 파일명에서 추출
-      const title = frontMatter.title || pageName.replace(/-/g, ' ');
-      const description = frontMatter.description || extractDescription(markdownContent);
-      const date = frontMatter.date || frontMatter.created_at || extractDateFromFilename(fileName) || new Date().toISOString().split('T')[0];
+      if (!fs.existsSync(filePath)) {
+        console.log(`⚠️  파일을 찾을 수 없습니다: ${fileName}`);
+        return;
+      }
       
-      blogPosts.push({
-        title: title,
-        description: description,
-        date: date,
-        author_name: frontMatter.author_name || frontMatter.author || 'Devths Team',
-        author_role: frontMatter.author_role || frontMatter.role || 'Team Member',
-        author_avatar: frontMatter.author_avatar,
-        category: frontMatter.category || 'Culture',
-        tags: Array.isArray(frontMatter.tags) ? frontMatter.tags : extractTags(markdownContent),
-        content: markdownContent,
-        thumbnail: frontMatter.thumbnail,
-        read_time: frontMatter.read_time || frontMatter.readTime || calculateReadTime(markdownContent),
-        published: frontMatter.published !== false, // 기본값은 true
-      });
+      processedFiles.add(fileName);
       
-      console.log(`✅ 게시글 발견: ${title} (페이지: ${pageName})`);
-    } catch (error) {
-      console.error(`⚠️  파일 파싱 오류 (${fileName}):`, error.message);
-    }
-  });
+      try {
+        const content = fs.readFileSync(filePath, 'utf-8');
+        
+        // Front Matter 파싱
+        let parsed;
+        let frontMatter = {};
+        let markdownContent = content;
+        
+        if (content.includes('---')) {
+          parsed = matter(content);
+          frontMatter = parsed.data;
+          markdownContent = parsed.content;
+        }
+        
+        // Front Matter가 있으면 우선 사용, 없으면 파일명에서 추출
+        const title = frontMatter.title || pageName.replace(/-/g, ' ');
+        const description = frontMatter.description || extractDescription(markdownContent);
+        const date = frontMatter.date || frontMatter.created_at || extractDateFromFilename(fileName) || new Date().toISOString().split('T')[0];
+        
+        blogPosts.push({
+          title: title,
+          description: description,
+          date: date,
+          author_name: frontMatter.author_name || frontMatter.author || 'Devths Team',
+          author_role: frontMatter.author_role || frontMatter.role || 'Team Member',
+          author_avatar: frontMatter.author_avatar,
+          category: frontMatter.category || 'Culture',
+          tags: Array.isArray(frontMatter.tags) ? frontMatter.tags : extractTags(markdownContent),
+          content: markdownContent,
+          thumbnail: frontMatter.thumbnail,
+          read_time: frontMatter.read_time || frontMatter.readTime || calculateReadTime(markdownContent),
+          published: frontMatter.published !== false, // 기본값은 true
+        });
+        
+        console.log(`✅ 게시글 발견: ${title} (페이지: ${pageName})`);
+      } catch (error) {
+        console.error(`⚠️  파일 파싱 오류 (${fileName}):`, error.message);
+      }
+    });
+    console.log('');
+  }
+  
+  // 게시글이 없으면 안내 메시지
+  if (blogPosts.length === 0) {
+    console.log('⚠️  추출된 포스트가 없습니다.');
+    console.log('\n💡 다음 방법 중 하나를 사용하세요:');
+    console.log('   1. [TeamBlog]로 시작하는 새 Wiki 페이지를 생성하세요');
+    console.log('      예: [TeamBlog] 게시글-제목테스트');
+    console.log('   2. TeamBlog 페이지에 마크다운 링크를 추가하세요');
+    console.log('      예: | [게시글 제목](게시글-제목) |\n');
+  }
   
   return blogPosts;
 }
@@ -336,12 +444,35 @@ async function main() {
     process.exit(1);
   }
   
+  // 디렉토리 내용 확인 (디버그)
+  try {
+    const files = fs.readdirSync(wikiPath);
+    console.log(`📋 Wiki 디렉토리 파일 목록 (처음 10개):`);
+    files.slice(0, 10).forEach(file => {
+      console.log(`   - ${file}`);
+    });
+    if (files.length > 10) {
+      console.log(`   ... 외 ${files.length - 10}개 파일`);
+    }
+    console.log('');
+  } catch (error) {
+    console.error(`⚠️  디렉토리 읽기 오류: ${error.message}`);
+  }
+  
   // 블로그 포스트 추출
   const posts = findBlogPosts(wikiPath);
   
   if (posts.length === 0) {
     console.log('⚠️  추출된 포스트가 없습니다.');
-    console.log('\n💡 팁: Wiki 파일에 다음과 같은 형식으로 작성하세요:');
+    console.log('\n💡 다음 방법 중 하나를 사용하세요:');
+    console.log('\n📝 방법 1: [TeamBlog]로 시작하는 페이지 생성 (권장)');
+    console.log('   - Wiki에서 새 페이지를 만들고 이름을 "[TeamBlog] 게시글-제목" 형식으로 작성');
+    console.log('   - 예: [TeamBlog] 게시글-제목테스트');
+    console.log('   - 자동으로 감지되어 Supabase에 동기화됩니다');
+    console.log('\n📋 방법 2: TeamBlog 페이지에 링크 추가');
+    console.log('   - TeamBlog 페이지에 마크다운 링크를 추가');
+    console.log('   - 예: | [게시글 제목](게시글-제목) |');
+    console.log('\n📄 Front Matter 형식 (선택사항):');
     console.log('---');
     console.log('title: "게시글 제목"');
     console.log('description: "게시글 설명"');

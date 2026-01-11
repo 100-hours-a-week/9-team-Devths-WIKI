@@ -18,6 +18,11 @@ const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_KEY;
 const wikiPath = process.env.WIKI_PATH || './wiki';
 
+console.log('🔍 환경 변수 확인:');
+console.log(`   SUPABASE_URL: ${supabaseUrl ? '✅ 설정됨' : '❌ 없음'}`);
+console.log(`   SUPABASE_SERVICE_KEY: ${supabaseServiceKey ? '✅ 설정됨 (' + supabaseServiceKey.substring(0, 10) + '...)' : '❌ 없음'}`);
+console.log(`   WIKI_PATH: ${wikiPath}\n`);
+
 if (!supabaseUrl || !supabaseServiceKey) {
   console.error('❌ 환경 변수가 설정되지 않았습니다.');
   console.error('필요한 환경 변수: SUPABASE_URL, SUPABASE_SERVICE_KEY');
@@ -379,11 +384,15 @@ async function syncToSupabase(posts) {
         .replace(/^-+|-+$/g, '');
       
       // 기존 포스트 확인 (제목으로)
-      const { data: existing } = await supabase
+      const { data: existing, error: selectError } = await supabase
         .from('blog_posts')
         .select('id')
         .eq('title', post.title)
-        .single();
+        .maybeSingle(); // single() 대신 maybeSingle() 사용 (데이터 없을 때 에러 방지)
+      
+      if (selectError && selectError.code !== 'PGRST116') { // PGRST116은 "no rows returned" 에러
+        console.error(`⚠️  기존 포스트 확인 중 오류: ${post.title}`, selectError.message);
+      }
       
       const postData = {
         title: post.title,
@@ -400,28 +409,39 @@ async function syncToSupabase(posts) {
         published: post.published,
       };
       
-      if (existing) {
+      if (existing && existing.id) {
         // 업데이트
-        const { error } = await supabase
+        console.log(`🔄 업데이트 중: ${post.title} (ID: ${existing.id})`);
+        const { data: updatedData, error } = await supabase
           .from('blog_posts')
           .update(postData)
-          .eq('id', existing.id);
+          .eq('id', existing.id)
+          .select();
         
         if (error) {
-          console.error(`❌ 업데이트 실패: ${post.title}`, error.message);
+          console.error(`❌ 업데이트 실패: ${post.title}`, error);
+          console.error(`   에러 코드: ${error.code}`);
+          console.error(`   에러 메시지: ${error.message}`);
+          console.error(`   에러 상세: ${JSON.stringify(error, null, 2)}`);
         } else {
-          console.log(`✅ 업데이트: ${post.title}`);
+          console.log(`✅ 업데이트 성공: ${post.title}`);
         }
       } else {
         // 새로 생성
-        const { error } = await supabase
+        console.log(`➕ 생성 중: ${post.title}`);
+        const { data: insertedData, error } = await supabase
           .from('blog_posts')
-          .insert(postData);
+          .insert(postData)
+          .select();
         
         if (error) {
-          console.error(`❌ 생성 실패: ${post.title}`, error.message);
+          console.error(`❌ 생성 실패: ${post.title}`, error);
+          console.error(`   에러 코드: ${error.code}`);
+          console.error(`   에러 메시지: ${error.message}`);
+          console.error(`   에러 상세: ${JSON.stringify(error, null, 2)}`);
+          console.error(`   삽입하려던 데이터:`, JSON.stringify(postData, null, 2));
         } else {
-          console.log(`✨ 생성: ${post.title}`);
+          console.log(`✨ 생성 성공: ${post.title} (ID: ${insertedData?.[0]?.id || 'N/A'})`);
         }
       }
     } catch (error) {
@@ -485,6 +505,12 @@ async function main() {
   }
   
   console.log(`📝 ${posts.length}개의 포스트를 찾았습니다.\n`);
+  
+  if (TEST_MODE) {
+    console.log('⚠️  테스트 모드: Supabase 동기화를 건너뜁니다.');
+    console.log('💡 GitHub Secrets에 SUPABASE_URL과 SUPABASE_SERVICE_KEY를 설정하세요.\n');
+    process.exit(0);
+  }
   
   // Supabase에 동기화
   await syncToSupabase(posts);

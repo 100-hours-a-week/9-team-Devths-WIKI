@@ -1,8 +1,8 @@
 ---
-name: Sprint-Backlog-Template
-about: 스프린트 백로그 템플릿
+name: Sprint-Backlog-Template-AI
+about: 인공지능 스프린트 백로그 템플릿
 title: ''
-labels: 스프린트-백로그
+labels: 인공지능
 assignees: ''
 
 ---

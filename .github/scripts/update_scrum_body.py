@@ -166,9 +166,13 @@ elif comment_body.startswith("[TBD]"):
     new_body = process_tbd(new_body, author_name, comment_body)
 else:
     # 기본: 아젠다 (3단 분리)
-    # 반드시 [오늘 할 일] 태그가 포함되어 있어야만 처리하도록 안전장치를 둘 수도 있지만,
-    # 편의상 일반 댓글은 아젠다로 간주하고 파싱 시도
-    new_body = process_agenda(new_body, author_name, comment_body)
+    # 구분자([오늘 할 일], [예상되는 이슈], [작일 회고])가 있는 경우에만 동작
+    agenda_markers = ["[오늘 할 일]", "[예상되는 이슈]", "[작일 회고]"]
+    
+    if any(marker in comment_body for marker in agenda_markers):
+        new_body = process_agenda(new_body, author_name, comment_body)
+    else:
+        print("ℹ️ No valid scrum delimiters found. Skipping update.")
 
 if new_body != body:
     issue.edit(body=new_body)

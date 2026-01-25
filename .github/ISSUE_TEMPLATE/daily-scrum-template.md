@@ -1,7 +1,7 @@
 ---
 name: Daily-Scrum-Template
 about: 데일리 스크럼 템플릿
-title: ''
+title: 2026.01.00 n주차 n요일
 labels: 데일리-스크럼
 assignees: ''
 
